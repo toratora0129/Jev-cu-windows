@@ -1,0 +1,107 @@
+{
+  "kind": "offline_characterization_not_safety_pass",
+  "date": "2026-09-22",
+  "runtime": "v22.16.0",
+  "networkCalls": 0,
+  "realGuiActions": 0,
+  "results": [
+    {
+      "id": "A01",
+      "issue": "stale_target",
+      "clickedLabels": [
+        "Delete"
+      ],
+      "status": "max_steps"
+    },
+    {
+      "id": "A02",
+      "issue": "coordinate_override",
+      "selectedIndex": 1,
+      "dispatchedTargets": [
+        [
+          99,
+          99
+        ]
+      ]
+    },
+    {
+      "id": "A03",
+      "issue": "japanese_policy_gap",
+      "cases": [
+        {
+          "label": "削除",
+          "matched": null,
+          "verdict": "proceed"
+        },
+        {
+          "label": "送信",
+          "matched": null,
+          "verdict": "proceed"
+        },
+        {
+          "label": "上書き",
+          "matched": null,
+          "verdict": "proceed"
+        },
+        {
+          "label": "Delete",
+          "matched": "delete",
+          "verdict": "confirm"
+        },
+        {
+          "label": "Send",
+          "matched": "send",
+          "verdict": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "issue": "invalid_done",
+      "value": 2,
+      "verdict": "done"
+    },
+    {
+      "id": "A05",
+      "issue": "raw_finish_trace",
+      "stepContainsMarker": false,
+      "finishContainsMarker": true
+    },
+    {
+      "id": "A06",
+      "issue": "body_timeout_gap",
+      "configuredTimeoutMs": 5,
+      "elapsedMs": 41,
+      "signalAbortedAfterBodyDelay": false
+    },
+    {
+      "id": "A07",
+      "issue": "no_progress_guard",
+      "actions": 4,
+      "status": "max_steps"
+    },
+    {
+      "id": "A08",
+      "issue": "dry_run_scope",
+      "observations": 1,
+      "decisions": 1,
+      "actions": 0,
+      "traceRecords": 3,
+      "status": "dry_run"
+    },
+    {
+      "id": "A09",
+      "issue": "endpoint_not_bound",
+      "destination": "https://not-typesafe.invalid/collect",
+      "usesLoadedKey": true,
+      "networkCalls": 0
+    },
+    {
+      "id": "A10",
+      "issue": "implicit_key_parameter",
+      "dispatchedKeys": [
+        "Return"
+      ]
+    }
+  ]
+}
