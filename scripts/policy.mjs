@@ -15,8 +15,8 @@ export const DEFAULT_ALLOWED_APPS = [
 
 /** 対象の表示文言がこれらのパターンに一致した場合、停止して確認する。照合用の中国語は維持する。 */
 export const SENSITIVE_LABEL_PATTERNS = [
-  { id: "delete", re: /删除|移除|清空|delete|remove/i },
-  { id: "send", re: /发送|提交|发布|回复|send|submit|post|reply/i },
+  { id: "delete", re: /删除|移除|清空|delete|remove|削除|消去|上書き/i },
+  { id: "send", re: /发送|提交|发布|回复|send|submit|post|reply|送信|投稿|返信/i },
   { id: "payment", re: /支付|付款|购买|下单|充值|订阅|开通|pay|purchase|buy|subscribe|checkout/i },
   { id: "auth", re: /授权|权限|登录|密码|验证码|authorize|permission|sign in|login|password|captcha/i },
   { id: "share", re: /上传|分享|导出|upload|share|export/i },
@@ -66,8 +66,11 @@ export function evaluatePolicy({
   if (step > maxSteps) {
     return { verdict: "stop", kind: "budget", reasons: [`step ${step} が上限を超えました： ${maxSteps}`] };
   }
-  if (typeof decision?.done === "number" && decision.done >= t.doneProbability) {
-    return { verdict: "done", reasons: [`完了の推定値 ${fmt(decision.done)}`] };
+  if (![decision?.confidence, decision?.risk, decision?.done].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1)) {
+    return { verdict: "escalate", kind: "invalid_decision", reasons: ["判断の確率値がないか、0～1 の範囲外です"] };
+  }
+  if (decision.done >= t.doneProbability) {
+    return { verdict: "escalate", kind: "done_proposed", reasons: ["完了はモデル推定です。結果の独立確認が必要です"] };
   }
 
   const reasons = [];
@@ -80,9 +83,6 @@ export function evaluatePolicy({
   if (decision?.action === "ask_user") reasons.push("Jev がユーザーの対応が必要と判断しました");
   if (reasons.length) return { verdict: "confirm", kind: "sensitive", reasons, dryRun };
 
-  if (![decision?.confidence, decision?.risk, decision?.done].every(n => Number.isFinite(n) && n >= 0 && n <= 1)) {
-    return { verdict: "escalate", kind: "invalid_decision", reasons: ["判断の確率値がないか、0～1 の範囲外です"] };
-  }
   if (typeof decision?.confidence === "number" && decision.confidence < t.stopConfidence) {
     return { verdict: "stop", kind: "low_confidence", reasons: [`対象の confidence ${fmt(decision.confidence)} < ${t.stopConfidence}`] };
   }

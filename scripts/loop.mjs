@@ -4,13 +4,13 @@
  * 設計上の前提：グローバル変数 `cua` を持つ Codex デスクトップの cua_repl JS 環境で実行する。
  * このモジュールでは cua 固有 API を import せず、単体テストができるよう driver から注入する。
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+
+
+
 import { decide as jevDecide } from "./jev-decide.mjs";
 import { evaluatePolicy, DEFAULT_ALLOWED_APPS } from "./policy.mjs";
 
-const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 
 /* --------------------------- AX の解析と候補 --------------------------- */
 
@@ -187,189 +187,29 @@ export function createCuaDriver(cua) {
 
 /* ------------------------------- メインループ ------------------------------- */
 
-const defaultEmit = (line) =>
-  globalThis.nodeRepl?.write ? globalThis.nodeRepl.write(line + "\n") : console.log(line);
-
-export async function runTask({
-  driver,
-  appName,
-  goal,
-  dryRun = true,
-  maxSteps = 30,
-  candidateMax = 40, // 候補数の上限。大きな日付ツリー（42セルとポップアップ内の欄）では調整が必要
-  allowedApps = DEFAULT_ALLOWED_APPS,
-  thresholds,
-  decide = jevDecide,
-  emit = defaultEmit,
-  traceDir = path.join(PROJECT_DIR, "runs"),
-  traceId,
-  resources = {}, // { text, key, direction } は Planner が用意する（Jev は文字列を生成しない）
-  constraints = "",
-  plan = "", // Planner（Codex）が用意した手順。Planner が作業内容、Jev が操作対象を選ぶ
-  jevOptions = {},
-  verify, // 任意：完全な AX → boolean。指定した場合は全体目標の検証に使う
-}) {
-  const runId = traceId ?? `${new Date().toISOString().replace(/[:.]/g, "-")}-${appName.replace(/\W+/g, "")}`;
-  fs.mkdirSync(traceDir, { recursive: true });
-  const tracePath = path.join(traceDir, `${runId}.jsonl`);
-  const record = (entry) => fs.appendFileSync(tracePath, JSON.stringify({ ts: new Date().toISOString(), runId, ...entry }) + "\n");
-
-  emit(`[jev-use] run=${runId} app=${appName} dryRun=${dryRun} goal=${goal}`);
-  record({ event: "start", appName, goal, dryRun, maxSteps, plan });
-
-  await driver.bind(appName);
-  let observation = await driver.observe({ full: true });
-  const recentActions = [];
-  const startedAt = Date.now();
-
-  for (let step = 1; step <= maxSteps; step++) {
-    // Planner が渡す確定的な手順（座標クリック／ドラッグ／入力）は、下で実行可否を制御する。
-    // ツールバーやパネルのどの要素を選ぶか、といった判断を Jev に渡す。
-    const planned = typeof resources === "function" ? ((await resources(step, null)) ?? {}) : {};
-    if (planned.skipJev) {
-      // 旧 Planner 経路には検証可能な対象／リスクがないため、Policy を迂回して実行しない。
-      return finish(dryRun ? "dry_run" : "escalate", {
-        steps: step - 1, tracePath, planned,
-        message: "Planner の直接操作はプレビュー専用です。現在の Computer Use 呼び出しで確認・実行し、Jev の判断には数えないでください",
-        elapsedMs: Date.now() - startedAt,
-      });
-    }
-    if (verify && await verify(observation)) {
-      return finish("done", { steps: step - 1, tracePath, verified: true, elapsedMs: Date.now() - startedAt });
-    }
-    const stepGoal = planned.jevGoal ?? goal;
-
-    let candidates = selectCandidates(parseAX(observation), stepGoal, { max: candidateMax });
-    // 観測が不足する場合（直前の差分に解析できる要素がない場合など）は、完全なツリーで1回再観測する
-    if (candidates.length < 2) {
-      observation = await driver.observe({ full: true });
-      candidates = selectCandidates(parseAX(observation), stepGoal, { max: candidateMax });
-      if (candidates.length < 2) {
-        record({ event: "no_candidates", step });
-        return finish("escalate", {
-          steps: step - 1,
-          tracePath,
-          message: "候補要素が不足しているため判断できません",
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
-    }
-    if (candidates.clipped) {
-      emit(`[step ${step}] 候補を制限：${candidates.totalClickable} → ${candidateMax}（ロールと関連度で並べ替え済み）`);
-    }
-
-    let decision;
-    try {
-      decision = await decide({
-        goal: stepGoal,
-        app: appName,
-        candidates,
-        context: buildContext(observation),
-        recentActions,
-        constraints: [planned.jevPlan ?? "", plan ? `Plan (from planner): ${plan}` : "", constraints].filter(Boolean).join("\n"),
-        ...jevOptions,
-      });
-    } catch (err) {
-      record({ event: "decide_error", step, message: err.message });
-      return { status: "error", step, message: err.message, tracePath };
-    }
-
-    const selected = candidates.find(c => c.index === decision.targetIndex);
-    const invalidTarget = decision.targetIndex != null && !selected;
-    if (invalidTarget) {
-      return finish("escalate", { steps: step - 1, tracePath, message: "対象が現在の候補一覧にありません", elapsedMs: Date.now() - startedAt });
-    }
-    // モデル用の説明は短縮される。Policy では、カスタムアダプターがラベルを返した場合も、
-    // 選択された観測要素の完全なラベルを使う。
-    if (selected) decision = { ...decision, targetLabel: selected.label };
-    const gate = evaluatePolicy({ decision, app: appName, allowedApps, step, maxSteps, thresholds, dryRun });
-    const target = decision.targetIndex != null ? `i${decision.targetIndex} (${decision.targetLabel ?? "?"})` : "—";
-    const line =
-      `[step ${step}] Jev ${decision.latencyMs}ms · ${decision.action ?? "?"} ${target} · ` +
-      `conf=${fmt(decision.confidence)} risk=${fmt(decision.risk)} done=${fmt(decision.done)} → ${gate.verdict}` +
-      (gate.reasons.length ? ` · ${gate.reasons.join("；")}` : "");
-    emit(line);
-    record({ event: "step", step, candidates: candidates.length, decision: stripRaw(decision), gate });
-
-    if (gate.verdict === "done" && (verify || stepGoal !== goal)) {
-      return finish("escalate", { steps: step - 1, tracePath, decision, message: "Jev は完了と判断しましたが全体目標は未確認です。現在の段階を確認してください", elapsedMs: Date.now() - startedAt });
-    }
-    if (gate.verdict === "done") {
-      return finish("done", { steps: step - 1, tracePath, decision, gate, elapsedMs: Date.now() - startedAt });
-    }
-    if (gate.verdict !== "proceed") {
-      return finish(gate.verdict, { steps: step - 1, tracePath, decision, gate, elapsedMs: Date.now() - startedAt });
-    }
-    if (dryRun) {
-      return finish("dry_run", {
-        steps: 0,
-        tracePath,
-        planned: { action: decision.action, targetIndex: decision.targetIndex, targetLabel: decision.targetLabel },
-        gate,
-        elapsedMs: Date.now() - startedAt,
-      });
-    }
-
-    const tAct = Date.now();
-    // 引数には固定設定またはステップごとのコールバックを使える（Planner が作業内容、Jev が操作対象を選ぶ）
-    const stepResources = typeof resources === "function" ? ((await resources(step, decision)) ?? {}) : resources;
-    try {
-      await executeAction(driver, decision, stepResources);
-    } catch (err) {
-      record({ event: "action_error", step, message: err.message });
-      return finish("error", { steps: step, tracePath, message: `操作の実行に失敗しました：${err.message}`, elapsedMs: Date.now() - startedAt });
-    }
-    const actMs = Date.now() - tAct;
-
-    const previousObservation = observation;
-    observation = await driver.observe({ full: true });
-    const noChange = observation === previousObservation;
-    recentActions.push(`${decision.action} i${decision.targetIndex} → ${noChange ? "no change" : "changed"}`);
-    emit(`         └ 操作 ${actMs}ms · ${noChange ? "画面に変化なし" : "画面に変化あり"}`);
-    record({ event: "action", step, actMs, noChange, action: decision.action, targetIndex: decision.targetIndex });
-  }
-
-  if (verify && await verify(observation)) {
-    return finish("done", { steps: maxSteps, tracePath, verified: true, elapsedMs: Date.now() - startedAt });
-  }
-  return finish("max_steps", { steps: maxSteps, tracePath, elapsedMs: Date.now() - startedAt });
-
-  function finish(status, extra) {
-    record({ event: "finish", status, ...extra });
-    emit(`[jev-use] 終了：${status} · 所要時間 ${(extra.elapsedMs / 1000).toFixed(1)}s · trace=${tracePath}`);
-    return { status, ...extra };
-  }
+/** 旧cuaの1回プレビュー。実操作は観測・許可を固定する新しい入口へ移行した。 */
+export async function runTask({driver, appName, goal, dryRun = true, candidateMax = 40,
+  allowedApps = DEFAULT_ALLOWED_APPS, thresholds, decide = jevDecide, verify,
+} = {}) {
+  if (dryRun !== true) return {status: 'escalate', reason: 'legacy_execution_disabled', steps: 0};
+  try {
+    await driver.bind(appName);
+    const observation = await driver.observe({full: true});
+    if (typeof observation !== 'string' || !observation.trim()) return {status: 'escalate', reason: 'observation_unavailable', steps: 0};
+    if (verify && await verify(observation) === true) return {status: 'done', verified: true, steps: 0};
+    const candidates = selectCandidates(parseAX(observation), goal, {max: candidateMax});
+    if (candidates.length < 2) return {status: 'escalate', reason: 'missing_candidates', steps: 0};
+    const response = await decide({goal, app: appName, candidates, context: buildContext(observation)});
+    const selected = candidates.find(c => c.index === response?.targetIndex);
+    if (response?.targetIndex != null && !selected) return {status: 'escalate', reason: 'invalid_target', steps: 0};
+    const decision = {...response, targetLabel: selected?.label};
+    const gate = evaluatePolicy({decision, app: appName, allowedApps, thresholds, dryRun: true});
+    // 生応答・ラベル・エラー文字列・goalをログにも戻り値にも反射しない。
+    return {status: gate.verdict === 'proceed' ? 'dry_run' : gate.verdict, reason: gate.kind ?? 'preview', steps: 0};
+  } catch { return {status: 'error', reason: 'preview_failed', steps: 0}; }
 }
-
-async function executeAction(driver, decision, resources) {
-  switch (decision.action) {
-    case "click_element":
-      if (Array.isArray(resources.at)) return driver.click(resources.at);
-      return driver.click(decision.targetIndex, resources.mouseButton ? { mouseButton: resources.mouseButton } : undefined);
-    case "click_at":
-      return driver.click(resources.at);
-    case "drag":
-      return driver.drag(resources.from, resources.to);
-    case "set_value":
-      return driver.setValue(decision.targetIndex, String(resources.text ?? ""));
-    case "type_text":
-      return driver.typeText(String(resources.text ?? ""));
-    case "press_key":
-      return driver.pressKey(String(resources.key ?? "Return"));
-    case "scroll":
-      return driver.scroll(decision.targetIndex, String(resources.direction ?? "down"), 1);
-    case "wait":
-      return sleep(500);
-    default:
-      throw new Error(`未対応の操作種別：${decision.action}`);
-  }
-}
-
-const fmt = (n) => (typeof n === "number" ? n.toFixed(2) : "n/a");
-const stripRaw = ({ raw, ...rest }) => rest;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 /** 一時的な実行基盤エラー（ScreenCaptureKit／無効な引数）を再試行する */
 export async function withRetry(fn, { attempts = 3, delayMs = 350 } = {}) {
   let lastErr;
