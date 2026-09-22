@@ -5,7 +5,8 @@
 | 用途 | 資料 |
 |---|---|
 | 共通の作業指示 | [AGENTS.md](../AGENTS.md) |
-| 現在の到達点・次の診断D1 | [STATUS](STATUS.md) |
+| 現在の到達点・許可・停止境界 | [STATUS](STATUS.md) |
+| M1の実装、Windows実測、失敗、最小使用例 | [M1記録](M1_2026-09-23_JA.md) |
 | 設計・実装、再利用、行き詰まった時の調査先 | [DEVELOPMENT](DEVELOPMENT.md) |
 | 日本語化で維持した文字列と検証範囲 | [LOCALIZATION_JA](LOCALIZATION_JA.md) |
 | 過去の監査、関連PR、Minecraft等の失敗記録 | [2026-09-22報告](RESEARCH_2026-09-22_JA.md)の該当節 |

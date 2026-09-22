@@ -86,9 +86,9 @@ test("buildContext：計算機の表示値を含める", () => {
   assert.ok(ctx.includes("42"), "Jev に現在の表示値が渡ること");
 });
 
-test("policy：完了の推定値が高い場合は done", () => {
-  const gate = evaluatePolicy({ decision: { done: 0.95, confidence: 1, targetIndex: 56 }, app: "Calendar" });
-  assert.equal(gate.verdict, "done");
+test("policy：完了推定は成功認定せず独立確認へ返す", () => {
+  const gate = evaluatePolicy({ decision: { done: 0.95, risk: 0, confidence: 1, targetIndex: 56 }, app: "Calendar" });
+  assert.equal(gate.verdict, "escalate");
 });
 
 test("policy：要確認の対象なら confirm", () => {
@@ -166,56 +166,6 @@ test("sanitizeLabel：長い URL を除き、文字数を制限する", () => {
   assert.ok(clean.length <= 120);
 });
 
-// 実行境界の回帰テスト。すべて模擬 driver を使い、実アプリやネットワークは操作しない。
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { runTask } from "../scripts/loop.mjs";
-
-async function mockRun(options) {
-  const traceDir = fs.mkdtempSync(path.join(os.tmpdir(), "jev-test-"));
-  try {
-    return await runTask({ appName: "Calendar", goal: "next month", emit: () => {}, traceDir, ...options });
-  } finally {
-    fs.rmSync(traceDir, { recursive: true, force: true });
-  }
-}
-
-test("Planner：プレビューでは操作せず、実行は上位へ引き継ぐ", async () => {
-  let actions = 0;
-  const driver = { bind: async () => {}, observe: async () => CALENDAR_AX, typeText: async () => { actions++; } };
-  for (const dryRun of [true, false]) {
-    const result = await mockRun({ driver, dryRun, maxSteps: 1, resources: () => ({ skipJev: true, action: "type_text", text: "test" }) });
-    assert.equal(result.status, dryRun ? "dry_run" : "escalate");
-  }
-  assert.equal(actions, 0);
-});
-
-test("完了は最終状態で検証し、最終ステップの後も確認する", async () => {
-  let ax = CALENDAR_AX;
-  const observations = [];
-  const driver = {
-    bind: async () => {},
-    observe: async ({ full }) => { observations.push(full); return ax; },
-    click: async () => { ax = ax.replace("September 2026", "October 2026"); },
-  };
-  const result = await mockRun({ driver, dryRun: false, maxSteps: 1,
-    decide: async () => ({ action: "click_element", targetIndex: 58, targetLabel: "next month", confidence: 1, risk: 0, done: 0 }),
-    verify: text => text.includes("October 2026"),
-  });
-  assert.equal(result.status, "done");
-  assert.equal(result.verified, true);
-  assert.deepEqual(observations, [true, true]);
-});
-
-test("Jev の完了判断で、失敗した結果検証を上書きしない", async () => {
-  const result = await mockRun({ driver: { bind: async () => {}, observe: async () => CALENDAR_AX },
-    dryRun: false, maxSteps: 1, verify: () => false,
-    decide: async () => ({ done: 0.99, confidence: 1 }),
-  });
-  assert.equal(result.status, "escalate");
-});
-
 test("不明な対象や確率の欠落を許可しない", () => {
   const decision = normalizeDecision({ target: { choice: "i999" }, action: { choice: "click_element" } }, { i1: "button A" });
   assert.equal(decision.targetIndex, null);
@@ -247,48 +197,4 @@ test('中国語 AX と英語ロールで候補・表示値が一致し、元の�
     assert.equal(elements.find(e => e.index === 15).raw.trim(), '15 按钮 Description: 6, ID: Six');
   }
   assert.equal(selectCandidates(parseAX('1 未知控件 Button')).length, 0);
-});
-
-test('中国語版 Calculator で判断と模擬実行の検証を通せる', async () => {
-  let ax = CHINESE_CALCULATOR_AX;
-  let calls = 0;
-  const clicked = [];
-  const result = await mockRun({
-    appName: 'Calculator', goal: 'Enter digit 6', dryRun: false, maxSteps: 1,
-    driver: {bind: async () => {}, observe: async () => ax,
-      click: async index => {clicked.push(index); ax = ax.replace('4 文本 0', '4 文本 6');}},
-    decide: async ({candidates, context}) => {
-      calls++;
-      assert.ok(context.includes('4 文本 0'));
-      assert.ok(candidates.some(e => e.index === 15 && e.role === 'button'));
-      return {action: 'click_element', targetIndex: 15, targetLabel: '6', confidence: 1, risk: 0, done: 0};
-    },
-    verify: text => text.includes('4 文本 6'),
-  });
-  assert.equal(result.status, 'done');
-  assert.equal(result.verified, true);
-  assert.equal(calls, 1);
-  assert.deepEqual(clicked, [15]);
-});
-
-test('長いラベルの危険語やアダプターの誤ったラベルで検査を迂回できない', async () => {
-  for (const spoof of [false, true]) {
-    const label = 'Description: ' + 'Ordinary event details '.repeat(8) + 'Delete Event';
-    const ax = `0 standard window Calendar\n203 button ${label}\n204 button Next`;
-    let clicks = 0;
-    const result = await mockRun({dryRun: false, maxSteps: 1,
-      driver: {bind: async () => {}, observe: async () => ax, click: async () => {clicks++;}},
-      decide: async ({candidates}) => {
-        const {criteria} = buildQuestions('Inspect event', candidates);
-        assert.equal(criteria.i203.length, 120);
-        assert.ok(!criteria.i203.includes('Delete Event'));
-        const decision = normalizeDecision({target: {choice: 'i203', confidence: 0.9},
-          action: {choice: 'click_element'}, risk: {noul: 0.05}, done: {noul: 0.02}}, criteria);
-        return spoof ? {...decision, targetLabel: 'Next'} : decision;
-      },
-    });
-    assert.equal(result.status, 'confirm');
-    assert.equal(clicks, 0);
-    assert.ok(result.gate.reasons.some(reason => reason.includes('delete')));
-  }
 });

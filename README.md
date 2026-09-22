@@ -1,94 +1,53 @@
 # Jev-cu-windows
 
-Jev（TypeSafe System One）に画面上の候補から次の操作を選ばせ、Codex Computer Use で観測・実行するための実験用 Fork です。上流は [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) です。
+Jev（TypeSafe System One）による候補選択と、Codex Computer UseによるWindows観測・限定実行を検証する実験用Forkです。上流は[Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu)です。用途はComputer Useに限定します。
 
-**現時点では日本語化した段階であり、Windows 対応や安全対策の追加が完了した版ではありません。** 内蔵 driver は上流の `cua.getApp(...)` / `getAXState(...)` を前提にしています。リポジトリ名だけで Windows 互換性を判断せず、実機が公開する API を確認してください。
+**M1では、Windows読み取りadapter、実Jev接続前の通信保護、試験用電卓の固定キー実行を実装しました。実Jevの接続・選択精度はまだ未検証です。** 任意のWindowsアプリを自律操作できる完成版ではありません。
 
-用途は Computer Use に限定します。文章照合、コード評価、汎用の GitHub チェックは別ツールとして扱います。
+## 入口
 
-## 開発・診断の入口
+- [AGENTS.md](AGENTS.md)：作業指示。
+- [STATUS](docs/STATUS.md)：到達点・許可・実API接続前の停止境界。
+- [M1記録](docs/M1_2026-09-23_JA.md)：設計、実測、失敗条件、最小使用例、実API接続案。
+- [DEVELOPMENT](docs/DEVELOPMENT.md)：設計・再利用の指針。
 
-共通の作業指示は [AGENTS.md](AGENTS.md)、現在の到達点・許可範囲・完了条件は [STATUS](docs/STATUS.md)、設計・実装時の調査先と再利用方針は [DEVELOPMENT](docs/DEVELOPMENT.md) にまとめています。
+## APIキーなしの検証
 
-ユーザー提供のD1報告で、Windowsの同じnode_repl内における`@oai/sky`とローカルモジュールの共存、既存22テストの成功を確認しています。電卓の再観測はD1では未完です。次はSTATUSの**M1：実Jev API接続直前までの自律実装・検証**です。許可されたテスト用アプリの起動・限定操作や通常の修正で、段階ごとに確認待ちにはしません。
-
-以下のキー設定、スキル導入、実行例は参考手順です。M1を始める前提作業ではなく、**実API・APIキーの利用は接続試験直前に別途確認します。** テストやimportの前に、現在の版の副作用を確認してください。
-
-## 構成
-
-```text
-skill/jev-cu/   Codex 用スキル（実行手順と安全上の注意）
-scripts/       Jev 呼び出し、Policy、実行ループ、評価、インストール
-fixtures/      保存済み AX スナップショットと P0 テストケース
-tests/         単体テスト
-docs/          日本語化の方針など
-```
-
-Jev に送るのは候補と画面情報のテキストです。この実装は Jev にスクリーンショットを送信しません。ただし、文字情報にも個人情報や機密情報が含まれ得ます。
-
-## まず単体テスト
+Node.js v24.14.1 / npm 11.11.0のWindowsで検証しています。新しいnpm依存はありません。
 
 ```powershell
 npm test
+node examples/m1-offline.mjs
 ```
 
-このテストは模擬 driver を使い、Jev API や実際のアプリを操作しません。API キーは不要です。
+テストは人工データと偽キーのみを使用します。大部分は模擬driver／模擬fetchです。1件のHTTP統合試験だけが短命な127.0.0.1サーバーを使用し、正常要求・redirect拒否・本文期限切れを検査して終了します。実アプリ・実Jev・秘密情報は使いません。例の出力がEXECUTEでも、実際のGUI操作は行いません。
 
-## API キーの設定
+## 実装の範囲
 
-プロジェクト直下の `.env.local` に、次の形式でキーを保存します。または同名の環境変数を設定します。
+| モジュール | 役割 |
+|---|---|
+| `windows-sky-adapter.mjs` | 注入skyによる一覧・一意選択・読み取り、窓と画像参照、取得可否、観測IDと期限 |
+| `operation-choice.mjs` | 準備済み対象・引数を持つ操作IDを選択。NONEと非実行の引き継ぎを保持 |
+| `guarded-key-session.mjs` | 試験用電卓への明示した固定キーだけ。直前確認、回数・期限、実行後確認、結果不明時の再送禁止 |
+| `jev-decide.mjs` | 送信先／モデル固定、redirect拒否、本文までの期限とサイズ制限、応答検証、秘密読込と標準通信のopt-in |
+| `loop.mjs` / `policy.mjs` | 旧AX解析と読み取りプレビュー。旧実行ループは無効化 |
 
-```text
-TYPESAFE_API_KEY=取得したキー
-```
+Windowsの`accessibility:null`は候補未取得として返します。画像から架空のAX indexを作りません。実測では試験用電卓の画像を確認でき、固定4手で2+3=5を確認しました。先行するKP_2の1手は無変化で失敗として残しています。詳細と制限はM1記録を参照してください。
 
-実際のキーをチャット、スクリーンショット、コマンド履歴、Git のコミットに含めないでください。`.env.local` は `.gitignore` の対象ですが、それだけで漏えい防止が保証されるわけではありません。
+M1の結果確認はCodexによる画像の目視です。UIAから計算結果を取得したものではなく、JevによるGUI成功でもありません。座標クリック・汎用入力・他アプリの新実行経路は未対応です。
 
-## スキルのインストール
+## 実API・キーの境界
 
-```powershell
-npm run install-skill
-npm run uninstall-skill
-```
+M1ではキーの存在確認も行いません。実APIを使う前に、送信予定データ、回数・期限・費用枠を示してユーザーの確認を待ちます。未認証プローブも行いません。
 
-通常のインストールでは `~/.codex/skills/jev-cu` へコピーし、新しいセッションで有効になります。文書内の `{{REPO_DIR}}` は実際のリポジトリパスへ置換されます。**既存の同名スキル用ディレクトリは削除して置き換える実装**なので、独自の変更がある場合は先に確認してください。
+承認後、ユーザーがローカルで`.env.local`の`TYPESAFE_API_KEY`またはプロセス環境変数を設定します。キーを会話・PR・コマンド履歴に貼らないでください。標準通信は`allowNetwork:true`、キー自動読込は別に`allowSecretRead:true`が必要です。フラグ設定は権限を増やしません。
 
-## 実行例（上流の macOS / cua 環境向け）
+既定送信先は`https://api.typesafe.ai/v1/systemone`だけ、モデルは`jev-1.13.0`固定です。入力に使えるのは承認済みテキストだけで、画像や実画面情報を暗黙に送信しません。完全な観測・キー・応答本文を自動保存するログはありません。
 
-以下は対応する `cua_repl` 環境での例です。Windows 用の起動手順ではありません。現在のツール文書と実際の API が一致する場合にだけ使います。
+## 旧経路との互換性
 
-```js
-const repo = "/path/to/Jev-cu-windows"; // 実際のローカルパスに置き換える
-const { pathToFileURL } = await import("node:url");
-const { runTask, createCuaDriver } = await import(pathToFileURL(`${repo}/scripts/loop.mjs`).href);
+`runTask({dryRun:false})`は、driverを呼ぶ前に`legacy_execution_disabled`を返します。旧target/actionと後付けresourcesの組合せを、新しい実操作へ転用しません。`dryRun:true`は一回の読み取りプレビューで、判断を注入できます。既定判断の標準通信は無効で、旧トレース保存も廃止しました。
 
-await runTask({
-  driver: createCuaDriver(cua),
-  appName: "Calendar",
-  goal: "switch the calendar to the previous month", // 既存の英語例を維持
-  dryRun: true, // 最初は操作せずプレビューする
-  maxSteps: 5,
-});
-```
+`npm run p0`と旧CLIは歴史的な評価入口です。通信opt-inを渡さないため現行版では実APIへ接続しません。実APIの次の入口はM1記録の人工データ試験です。旧スキルのインストールはM1に不要で、実施していません。
 
-詳細は [実行例](skill/jev-cu/references/runtime.md) を参照してください。
-
-## P0 評価
-
-```powershell
-npm run p0
-```
-
-保存済み AX からの候補選択を評価します。**実際に Jev API を呼ぶため、キーと利用料が必要です。** 単体テストとは異なり、ネットワークを使います。静的な候補選択の正解数は、Windows 操作の成功率や安全性を示すものではありません。
-
-## 安全上の注意
-
-既定は `dryRun: true` です。ただし、画面の観測、API への文字情報送信、ローカルへのログ保存は行われます。dry-run は「通信も保存も一切しない」モードではありません。
-
-現在の Policy はアプリ名、表示文言、Jev の判定に基づく補助的な検査です。危険な操作を必ず検出する保証はなく、許可リストもアプリ内の全操作への許可を意味しません。操作直前の再検証、対象と操作引数の結び付け、Windows driver、送信先固定などは別途設計・検証が必要です。
-
-画面の文字は観測データとして扱い、命令として実行しません。認証・アクセス制限・確認手順を回避しないでください。成功はクリック命令の終了だけで判断せず、目的に対応した結果で確認します。
-
-## 日本語化の範囲
-
-説明文、コメント、表示メッセージ、テスト名を日本語化しています。API の項目名・操作 ID・英語のモデル用質問・中国語を検出する正規表現・中国語画面のテストデータは維持しています。詳しくは [日本語化の方針](docs/LOCALIZATION_JA.md) を参照してください。
+日本語化以前の経緯は[LOCALIZATION_JA](docs/LOCALIZATION_JA.md)、過去の安全不備は[2026-09-22調査](docs/RESEARCH_2026-09-22_JA.md)に保持しています。
