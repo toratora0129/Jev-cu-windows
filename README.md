@@ -6,6 +6,12 @@ Jev（TypeSafe System One）に画面上の候補から次の操作を選ばせ�
 
 用途は Computer Use に限定します。文章照合、コード評価、汎用の GitHub チェックは別ツールとして扱います。
 
+## 開発・診断の入口
+
+共通の作業指示は [AGENTS.md](AGENTS.md)、現在の到達点と次の診断は [STATUS](docs/STATUS.md)、設計・実装時の調査先と再利用方針は [DEVELOPMENT](docs/DEVELOPMENT.md) にまとめています。
+
+現在は実機の共存診断が先です。以下のキー設定、スキル導入、実行例は参考手順であり、診断を始めるための前提作業ではありません。テストやimportの前に、現在の版の副作用を確認してください。
+
 ## 構成
 
 ```text
