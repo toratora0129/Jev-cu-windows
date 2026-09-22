@@ -22,7 +22,7 @@ Windows側で2026-09-23に直接実施した結果。詳しい設計・一次資
 | 実測：限定操作 | 入力5回。不成功KP_2が1回、条件変更後の`2`→`Numpad_Add`→`3`→`Return`が4回。各手の前後を目視確認し、最終表示2+3=5。Jevなしの固定判断。前面化1回、実クリック0 |
 | 失敗 | KP_2の無変化は原因未確定。古い観測の使用はSTALE_OBSERVATIONで拒否し、新規観測で再開。成功に集計し直していない |
 | 模擬／loopback | 送信先・redirect・本文期限・サイズ・応答型／範囲・秘密／ログ保護、候補外／古い回答、引数不一致、結果不明時の再送禁止、予算、排他を検査。実Jev要求0 |
-| 検証コマンド | `npm test`：48成功・0失敗・0スキップ。`node examples/m1-offline.mjs`成功。全scripts/tests/examplesの`node --check`と`git diff --check`成功 |
+| 検証コマンド | `npm test`：49成功・0失敗・0スキップ。`node examples/m1-offline.mjs`成功。全scripts/tests/examplesの`node --check`と`git diff --check`成功 |
 | 未確認 | 実Jev到達性・認証・課金・選択精度、Windowsの構造化要素形式、座標系／倍率、任意アプリ。caller_visualを自動Verifierとみなさない |
 | 終了時GUI | 試験用電卓は5を表示したまま。sessionは終了し、未確認の入力結果なし。他人の履歴／文書の削除なし |
 

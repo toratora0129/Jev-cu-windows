@@ -22,6 +22,7 @@ export function createCalculatorKeySession({sky, adapter, selection, allowedKeys
   function assertObservation(observation) {
     adapter.assertCurrent(observation);
     requireCondition(observation.window.app === scope.app && observation.window.id === scope.id && observation.window.title === scope.title, 'WINDOW_MISMATCH');
+    requireCondition(Array.isArray(observation.screenshots) && observation.screenshots.length > 0, 'VISUAL_EVIDENCE_REQUIRED');
   }
   async function observe() {
     check();

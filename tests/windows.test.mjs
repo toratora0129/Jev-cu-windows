@@ -108,7 +108,7 @@ test('keys: unknown operation, unsafe key, foreign window and stale preflight ca
 });
 test('keys: changed text before dispatch blocks even an affirmative visual confirmation', async () => {
   let tree = 'initial';
-  const f = await prepared({get_window_state: async () => ({window,screenshots:[],accessibility:{tree}})});
+  const f = await prepared({get_window_state: async () => ({window,screenshots:[{id:'synthetic',zIndex:0}],accessibility:{tree}})});
   tree = 'replacement';
   const fresh = await f.session.refresh(f.batch);
   await assert.rejects(f.session.dispatch(f.batch,execute(f.batch),{confirmed:true,observationId:fresh.id}),{code:'OBSERVATION_CHANGED'});
@@ -178,7 +178,7 @@ test('keys: same client sessions cannot run in parallel or discard an uncertain 
 test('adapter: input receives the exact Window object returned by sky', async () => {
   const f = await prepared();
   let actual;
-  f.sky.get_window_state = async ({window: target}) => {actual=target; return {window:target,accessibility:null,screenshots:[]};};
+  f.sky.get_window_state = async ({window: target}) => {actual=target; return {window:target,accessibility:null,screenshots:[{id:'synthetic',zIndex:0}]};};
   const fresh = await f.session.refresh(f.batch);
   f.sky.press_key = async ({window:target}) => {assert.equal(target,actual);};
   const result = await f.session.dispatch(f.batch,execute(f.batch),{confirmed:true,observationId:fresh.id});
@@ -215,4 +215,11 @@ test('keys: closing an old session twice cannot unlock a newer session', async (
   f.session.close();
   assert.throws(create,{code:'CLIENT_SESSION_ACTIVE'});
   next.close();
+});
+test('keys: affirmative confirmation cannot permit input without a captured image', async () => {
+  const f = await prepared();
+  f.sky.get_window_state = async () => ({window,accessibility:null,screenshots:[]});
+  await assert.rejects(f.session.refresh(f.batch),{code:'VISUAL_EVIDENCE_REQUIRED'});
+  await assert.rejects(f.session.dispatch(f.batch,execute(f.batch),{confirmed:true}),{code:'INVALID_BATCH'});
+  assert.equal(f.calls.length,0);
 });
