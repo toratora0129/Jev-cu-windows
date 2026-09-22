@@ -17,6 +17,7 @@ Windows側で2026-09-23に直接実施した結果。詳しい設計・一次資
 | 区分 | 結果 |
 |---|---|
 | 基準 | `9b841a062ee8078fa6ce2d102bc78d3e61378f8a`、作業ブランチ`codex/m1-windows-offline` |
+| GitHub・検証対象 | [PR #5](https://github.com/toratora0129/Jev-cu-windows/pull/5)。実装・最終試験対象SHA `258f1adf0b24a7cc6de3458ed0e7b4bba6994779`。その後の追記はこの引き継ぎ文書のみ |
 | 静的確認 | D1から実行コード変更なしを確認後、その根拠を再利用。新規・変更モジュール、依存、test scriptを実行前に確認。新規依存なし |
 | 実測：読み取り | 公式経路で電卓を1回起動。一意に列挙し画像取得。画像併用とテキストのみの両条件でaccessibility:null。adapterはunavailableを保持 |
 | 実測：限定操作 | 入力5回。不成功KP_2が1回、条件変更後の`2`→`Numpad_Add`→`3`→`Return`が4回。各手の前後を目視確認し、最終表示2+3=5。Jevなしの固定判断。前面化1回、実クリック0 |
