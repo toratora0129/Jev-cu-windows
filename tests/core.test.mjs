@@ -33,7 +33,7 @@ const CALENDAR_AX = [
   "The focused UI element is 2 container Description: Month Calendar Area",
 ].join("\n");
 
-test("parseAX 解析索引/角色/标签", () => {
+test("parseAX：インデックス・ロール・ラベルの解析", () => {
   const els = parseAX(CALENDAR_AX);
   const prev = els.find((e) => e.index === 56);
   assert.equal(prev.role, "button");
@@ -42,56 +42,56 @@ test("parseAX 解析索引/角色/标签", () => {
   assert.equal(field.role, "button");
 });
 
-test("parseAX 兼容 CRLF 换行（Windows 检出回归）", () => {
+test("parseAX：CRLF 改行に対応（Windows チェックアウトの回帰確認）", () => {
   // A Windows checkout (core.autocrlf) turns the LF fixtures into CRLF. Splitting
   // on "\n" alone leaves a trailing "\r" on every line, and because "." does not
   // match "\r" the `(.*)$` group never closes: parseAX then returns 0 elements and
   // every Choice question is sent with an empty criteria map (HTTP 400).
   const crlf = CALENDAR_AX.replace(/\n/g, "\r\n");
   const els = parseAX(crlf);
-  assert.equal(els.length, parseAX(CALENDAR_AX).length, "CRLF 与 LF 必须解析出同样多的元素");
-  assert.ok(els.length > 0, "CRLF 文本也必须解析出元素");
+  assert.equal(els.length, parseAX(CALENDAR_AX).length, "CRLF と LF で解析される要素数が一致すること");
+  assert.ok(els.length > 0, "CRLF のテキストでも要素が解析されること");
   const prev = els.find((e) => e.index === 56);
   assert.equal(prev?.role, "button");
   assert.equal(prev?.label, "previous month");
-  assert.ok(buildContext(crlf).includes("September"), "buildContext 也必须能在 CRLF 文本里读到状态行");
+  assert.ok(buildContext(crlf).includes("September"), "buildContext が CRLF の状態行を取得できること");
 });
 
-test("selectCandidates 不会把目标按钮挤出候选集（P0 实测回归）", () => {
+test("selectCandidates：目的のボタンを候補から落とさない（P0 の回帰確認）", () => {
   const els = parseAX(CALENDAR_AX);
   const candidates = selectCandidates(els, "switch the calendar to the previous month", { max: 40 });
   const indices = candidates.map((c) => c.index);
-  assert.ok(indices.includes(56), "previous month 按钮必须在候选集中");
-  assert.ok(indices.includes(58), "next month 按钮必须在候选集中");
-  // 日历日期格仍可选择；翻月按钮应排在无关日期前。
+  assert.ok(indices.includes(56), "previous month ボタンが候補に含まれること");
+  assert.ok(indices.includes(58), "next month ボタンが候補に含まれること");
+  // 日付セルも選べるが、月移動ボタンは無関係な日付より先に並ぶこと。
   assert.ok(indices.indexOf(56) < indices.indexOf(4));
 });
 
-test("selectCandidates 在 max 很小时仍优先保留按钮", () => {
+test("selectCandidates：max が小さくてもボタンを優先して残す", () => {
   const els = parseAX(CALENDAR_AX);
   const candidates = selectCandidates(els, "previous month", { max: 3 });
   assert.ok(candidates.map((c) => c.index).includes(56));
 });
 
-test("buildContext 只取少量上下文", () => {
+test("buildContext：少量の画面情報だけを取得する", () => {
   const ctx = buildContext(CALENDAR_AX);
   assert.ok(ctx.includes("Calendar"));
-  assert.ok(ctx.includes("September 2026"), "应包含关键文本状态（当前月份）");
+  assert.ok(ctx.includes("September 2026"), "重要な表示状態（現在の月）が含まれること");
   assert.ok(ctx.split("\n").length <= 9);
 });
 
-test("buildContext 带上计算器显示值", () => {
+test("buildContext：計算機の表示値を含める", () => {
   const calcAx = ['Window: "Calculator", App: Calculator.', '0 standard window Calculator', '\t4 text ‎42', '\t24 button Equals'].join("\n");
   const ctx = buildContext(calcAx);
-  assert.ok(ctx.includes("42"), "Jev 必须能看到当前显示值");
+  assert.ok(ctx.includes("42"), "Jev に現在の表示値が渡ること");
 });
 
-test("policy：完成概率高 → done", () => {
+test("policy：完了の推定値が高い場合は done", () => {
   const gate = evaluatePolicy({ decision: { done: 0.95, confidence: 1, targetIndex: 56 }, app: "Calendar" });
   assert.equal(gate.verdict, "done");
 });
 
-test("policy：敏感目标 → confirm", () => {
+test("policy：要確認の対象なら confirm", () => {
   const gate = evaluatePolicy({
     decision: { done: 0.01, risk: 0.01, confidence: 0.99, targetIndex: 12, targetLabel: "button 删除歌曲" },
     app: "NetEaseMusic",
@@ -99,7 +99,7 @@ test("policy：敏感目标 → confirm", () => {
   assert.equal(gate.verdict, "confirm");
 });
 
-test("policy：高风险判定 → confirm", () => {
+test("policy：高リスクの判定なら confirm", () => {
   const gate = evaluatePolicy({
     decision: { done: 0.01, risk: 0.8, confidence: 0.99, targetIndex: 12, targetLabel: "button download" },
     app: "NetEaseMusic",
@@ -107,43 +107,43 @@ test("policy：高风险判定 → confirm", () => {
   assert.equal(gate.verdict, "confirm");
 });
 
-test("policy：低置信度分级 stop / escalate", () => {
+test("policy：低 confidence を stop / escalate に振り分ける", () => {
   const stop = evaluatePolicy({ decision: { done: 0.1, risk: 0.01, confidence: 0.2, targetIndex: 1 }, app: "Calendar" });
   assert.equal(stop.verdict, "stop");
-  // Calendar 属零副作用 App（下限 0.4），0.35 仍应升级
+  // Calendar は既存の緩和対象（下限 0.4）だが、0.35 では上位へ戻す
   const esc = evaluatePolicy({ decision: { done: 0.1, risk: 0.01, confidence: 0.35, targetIndex: 1 }, app: "Calendar" });
   assert.equal(esc.verdict, "escalate");
-  // 非零副作用 App（下限 0.5），0.45 应升级
+  // 緩和対象外のアプリ（下限 0.5）は、0.45 では上位へ戻す
   const esc2 = evaluatePolicy({ decision: { done: 0.1, risk: 0.01, confidence: 0.45, targetIndex: 1 }, app: "NetEaseMusic" });
   assert.equal(esc2.verdict, "escalate");
 });
 
-test("policy：零副作用 App 置信度 0.46 放行，其他 App 仍升级", () => {
+test("policy：緩和対象は confidence 0.46 で進み、対象外は上位へ戻す", () => {
   const calc = evaluatePolicy({ decision: { done: 0.1, risk: 0.03, confidence: 0.46, targetIndex: 24, targetLabel: "button: Equals" }, app: "Calculator" });
   assert.equal(calc.verdict, "proceed");
   const netease = evaluatePolicy({ decision: { done: 0.1, risk: 0.03, confidence: 0.46, targetIndex: 24, targetLabel: "link: 播放" }, app: "NetEaseMusic" });
   assert.equal(netease.verdict, "escalate");
 });
 
-test("policy：白名单外的 App → confirm", () => {
+test("policy：許可リスト外のアプリは confirm", () => {
   const gate = evaluatePolicy({ decision: { done: 0.1, risk: 0, confidence: 1, targetIndex: 1 }, app: "UnknownApp" });
   assert.equal(gate.verdict, "confirm");
 });
 
-test("matchSensitive 命中支付与发送", () => {
+test("matchSensitive：支払いと送信の照合", () => {
   assert.equal(matchSensitive("button 立即支付").id, "payment");
   assert.equal(matchSensitive("button Send message").id, "send");
   assert.equal(matchSensitive("button Search"), null);
 });
 
-test("buildQuestions/normalizeDecision 往返一致", () => {
+test("buildQuestions/normalizeDecision：往復で判断情報が一致する", () => {
   const candidates = [
     { index: 56, role: "button", label: "previous month" },
     { index: 58, role: "button", label: "next month" },
   ];
   const { questions, criteria } = buildQuestions("go to the previous month", candidates);
   assert.ok(questions.target.criteria.i56.includes("previous month"));
-  assert.ok(questions.action.criteria.drag, "动作类型应包含 drag");
+  assert.ok(questions.action.criteria.drag, "操作種別に drag が含まれること");
   const decision = normalizeDecision(
     {
       target: { choice: "i56", confidence: 1, probabilities: { i56: 1, i58: 0 } },
@@ -158,7 +158,7 @@ test("buildQuestions/normalizeDecision 往返一致", () => {
   assert.equal(decision.done, 0.04);
 });
 
-test("sanitizeLabel 去掉长 URL 并限长", () => {
+test("sanitizeLabel：長い URL を除き、文字数を制限する", () => {
   const raw = "link: 下载管理, Value: orpheus://orpheus/pub/app.html?resizable=true&x=0&y=0&width=1470#/m/offline/complete/";
   const clean = sanitizeLabel(raw);
   assert.ok(!clean.includes("orpheus://"));
@@ -166,7 +166,7 @@ test("sanitizeLabel 去掉长 URL 并限长", () => {
   assert.ok(clean.length <= 120);
 });
 
-// 执行边界回归：全部使用模拟 driver，不操作真实 App、不调用网络。
+// 実行境界の回帰テスト。すべて模擬 driver を使い、実アプリやネットワークは操作しない。
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -181,7 +181,7 @@ async function mockRun(options) {
   }
 }
 
-test("Planner 预览无动作，真实执行交给接管", async () => {
+test("Planner：プレビューでは操作せず、実行は上位へ引き継ぐ", async () => {
   let actions = 0;
   const driver = { bind: async () => {}, observe: async () => CALENDAR_AX, typeText: async () => { actions++; } };
   for (const dryRun of [true, false]) {
@@ -191,7 +191,7 @@ test("Planner 预览无动作，真实执行交给接管", async () => {
   assert.equal(actions, 0);
 });
 
-test("完成以最终状态核验，最后一步之后也检查", async () => {
+test("完了は最終状態で検証し、最終ステップの後も確認する", async () => {
   let ax = CALENDAR_AX;
   const observations = [];
   const driver = {
@@ -208,7 +208,7 @@ test("完成以最终状态核验，最后一步之后也检查", async () => {
   assert.deepEqual(observations, [true, true]);
 });
 
-test("Jev 自报完成不能覆盖失败的结果核验", async () => {
+test("Jev の完了判断で、失敗した結果検証を上書きしない", async () => {
   const result = await mockRun({ driver: { bind: async () => {}, observe: async () => CALENDAR_AX },
     dryRun: false, maxSteps: 1, verify: () => false,
     decide: async () => ({ done: 0.99, confidence: 1 }),
@@ -216,7 +216,7 @@ test("Jev 自报完成不能覆盖失败的结果核验", async () => {
   assert.equal(result.status, "escalate");
 });
 
-test("未知目标和缺失概率不放行", () => {
+test("不明な対象や確率の欠落を許可しない", () => {
   const decision = normalizeDecision({ target: { choice: "i999" }, action: { choice: "click_element" } }, { i1: "button A" });
   assert.equal(decision.targetIndex, null);
   assert.equal(evaluatePolicy({ decision, app: "Calendar" }).verdict, "escalate");
@@ -232,7 +232,7 @@ const CHINESE_CALCULATOR_AX = [
   '\t\t\t24 按钮 Description: 等于, ID: Equals',
 ].join('\n');
 
-test('中文 AX 与英文角色有相同候选和显示值，保留原始索引与标签', () => {
+test('中国語 AX と英語ロールで候補・表示値が一致し、元のインデックスとラベルを保持する', () => {
   const en = CHINESE_CALCULATOR_AX.replace('标准窗口', 'standard window')
     .replace('分离组', 'split group').replace('滚动区', 'scroll area')
     .replace('文本', 'text').replaceAll('按钮', 'button');
@@ -249,7 +249,7 @@ test('中文 AX 与英文角色有相同候选和显示值，保留原始索引�
   assert.equal(selectCandidates(parseAX('1 未知控件 Button')).length, 0);
 });
 
-test('中文计算器可以进入决策并通过模拟执行核验', async () => {
+test('中国語版 Calculator で判断と模擬実行の検証を通せる', async () => {
   let ax = CHINESE_CALCULATOR_AX;
   let calls = 0;
   const clicked = [];
@@ -271,7 +271,7 @@ test('中文计算器可以进入决策并通过模拟执行核验', async () =>
   assert.deepEqual(clicked, [15]);
 });
 
-test('长标签敏感词和适配器误报标签都不能绕过执行门槛', async () => {
+test('長いラベルの危険語やアダプターの誤ったラベルで検査を迂回できない', async () => {
   for (const spoof of [false, true]) {
     const label = 'Description: ' + 'Ordinary event details '.repeat(8) + 'Delete Event';
     const ax = `0 standard window Calendar\n203 button ${label}\n204 button Next`;

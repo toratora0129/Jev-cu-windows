@@ -1,8 +1,8 @@
 /**
- * jev-use 循环引擎：观测（Computer Use）→ 决策（Jev）→ 门槛（Policy）→ 执行（Computer Use）。
+ * jev-use ループ：観測（Computer Use）→ 判断（Jev）→ 検査（Policy）→ 実行（Computer Use）。
  *
- * 设计约束：必须在 Codex 桌面 App 的 cua_repl JS 运行时里执行（那里有全局 `cua`）。
- * 本模块本身不 import 任何 cua 专有 API，通过 driver 适配器注入，便于单测。
+ * 設計上の前提：グローバル変数 `cua` を持つ Codex デスクトップの cua_repl JS 環境で実行する。
+ * このモジュールでは cua 固有 API を import せず、単体テストができるよう driver から注入する。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -12,7 +12,7 @@ import { evaluatePolicy, DEFAULT_ALLOWED_APPS } from "./policy.mjs";
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/* --------------------------- AX 解析与候选 --------------------------- */
+/* --------------------------- AX の解析と候補 --------------------------- */
 
 const ROLES = [
   "standard window",
@@ -49,8 +49,8 @@ const ROLES = [
   "Event",
 ];
 
-// Localized role descriptions observed in CUA's Chinese Calculator output.
-// Normalize roles only; labels, IDs and original lines remain unchanged.
+// CUA の中国語版 Calculator 出力で観測されたロール名。
+// ロールのみ正規化する。中国語の照合語、ラベル、ID、元の行は翻訳しない。
 const ROLE_ALIASES = new Map([
   ["标准窗口", "standard window"],
   ["分离组", "split group"],
@@ -75,11 +75,11 @@ const CLICKABLE_ROLES = new Set([
   "stepper",
   "combo box",
   "tab",
-  "list",            // Calendar 月视图日格（role=list，如 "list Saturday, September 19"）
-  "date time area",  // Calendar 日期/时间选择器（ID: start-datepicker / start-timepicker 等）
+  "list",            // Calendar の月表示の日付セル（role=list、例："list Saturday, September 19"）
+  "date time area",  // Calendar の日付／時刻選択（ID: start-datepicker / start-timepicker 等）
 ]);
 
-/** 把 AX 文本解析成元素列表：{index, role, label, depth, raw} */
+/** AX テキストを要素一覧に変換する：{index, role, label, depth, raw} */
 export function parseAX(axText) {
   const out = [];
   for (const line of String(axText ?? "").split(/\r?\n/)) {
@@ -89,8 +89,8 @@ export function parseAX(axText) {
     const rest = m[3].trim();
     const sourceRole = ROLES.find((r) => rest === r || rest.startsWith(r + " ")) ?? rest.split(" ")[0];
     const role = ROLE_ALIASES.get(sourceRole) ?? sourceRole;
-    // 清掉 AX 元数据尾巴（如 "Secondary Actions: Move next, Remove from toolbar"），
-    // 它描述的是元素的次级动作列表，不是元素名称；保留会污染标签并误触敏感词门。
+    // AX の末尾メタデータ（例："Secondary Actions: Move next, Remove from toolbar"）を除く。
+    // これは要素名ではなく補助操作の一覧であり、残すとラベルや危険語判定に影響する。
     const label = rest
       .slice(sourceRole.length)
       .trim()
@@ -102,8 +102,8 @@ export function parseAX(axText) {
 }
 
 /**
- * 候选筛选：角色过滤 + 轻量打分。
- * 关键教训（P0 实测）：绝不能按位置盲截断，否则目标会被列表项挤出候选集。
+ * 候補の抽出：ロールによる絞り込みと簡易スコアリング。
+ * P0 の教訓：単に先頭から切り詰めると、一覧項目に押し出されて目的の要素が候補から落ちる。
  */
 export function selectCandidates(elements, goal = "", { max = 40 } = {}) {
   const tokens = String(goal)
@@ -137,8 +137,8 @@ export function selectCandidates(elements, goal = "", { max = 40 } = {}) {
 }
 
 /**
- * 给 Jev 的少量上下文：窗口标题 + 关键文本行（如计算器显示值）+ 焦点行。
- * 这些"状态反馈"是 Jev 能连续做对多步操作的关键，避免只给候选、看不到当前值。
+ * Jev に渡す少量の情報：ウィンドウタイトル、重要なテキスト行（計算機の表示値など）、フォーカス行。
+ * 候補だけでなく現在値も渡し、複数ステップの判断に必要な状態を伝える。
  */
 export function buildContext(axText, { maxTextLines = 6 } = {}) {
   const lines = String(axText ?? "")
@@ -152,7 +152,7 @@ export function buildContext(axText, { maxTextLines = 6 } = {}) {
   return [...head, ...texts, focus].filter(Boolean).join("\n").slice(0, 1_500);
 }
 
-/* ------------------------------ cua 适配 ------------------------------ */
+/* ------------------------------ cua アダプター ------------------------------ */
 
 export function createCuaDriver(cua) {
   let app = null;
@@ -185,7 +185,7 @@ export function createCuaDriver(cua) {
   };
 }
 
-/* ------------------------------- 主循环 ------------------------------- */
+/* ------------------------------- メインループ ------------------------------- */
 
 const defaultEmit = (line) =>
   globalThis.nodeRepl?.write ? globalThis.nodeRepl.write(line + "\n") : console.log(line);
@@ -196,18 +196,18 @@ export async function runTask({
   goal,
   dryRun = true,
   maxSteps = 30,
-  candidateMax = 40, // 候选上限：大日历树（42 个日格 + 弹层字段）需要调大
+  candidateMax = 40, // 候補数の上限。大きな日付ツリー（42セルとポップアップ内の欄）では調整が必要
   allowedApps = DEFAULT_ALLOWED_APPS,
   thresholds,
   decide = jevDecide,
   emit = defaultEmit,
   traceDir = path.join(PROJECT_DIR, "runs"),
   traceId,
-  resources = {}, // { text, key, direction } 由 Planner 预先准备（Jev 不生成文本）
+  resources = {}, // { text, key, direction } は Planner が用意する（Jev は文字列を生成しない）
   constraints = "",
-  plan = "", // Planner（Codex 模型）给出的步骤计划：模型决定"做什么"，Jev 决定"点哪里"
+  plan = "", // Planner（Codex）が用意した手順。Planner が作業内容、Jev が操作対象を選ぶ
   jevOptions = {},
-  verify, // 可选：完整 AX → boolean；提供后以此核验总目标
+  verify, // 任意：完全な AX → boolean。指定した場合は全体目標の検証に使う
 }) {
   const runId = traceId ?? `${new Date().toISOString().replace(/[:.]/g, "-")}-${appName.replace(/\W+/g, "")}`;
   fs.mkdirSync(traceDir, { recursive: true });
@@ -223,14 +223,14 @@ export async function runTask({
   const startedAt = Date.now();
 
   for (let step = 1; step <= maxSteps; step++) {
-    // Planner 可以直接注入确定性步骤（画布坐标点击/拖拽/输入），无需 Jev 判断；
-    // 需要判断"点哪个工具栏/面板元素"的步骤才交给 Jev。
+    // Planner が渡す確定的な手順（座標クリック／ドラッグ／入力）は、下で実行可否を制御する。
+    // ツールバーやパネルのどの要素を選ぶか、といった判断を Jev に渡す。
     const planned = typeof resources === "function" ? ((await resources(step, null)) ?? {}) : {};
     if (planned.skipJev) {
-      // 旧的 Planner 通道没有可验证的目标/风险，不再绕过策略直接执行。
+      // 旧 Planner 経路には検証可能な対象／リスクがないため、Policy を迂回して実行しない。
       return finish(dryRun ? "dry_run" : "escalate", {
         steps: step - 1, tracePath, planned,
-        message: "Planner 直接动作仅可预览；请在当前 Computer Use 调用中审查并执行，不计为 Jev 决策",
+        message: "Planner の直接操作はプレビュー専用です。現在の Computer Use 呼び出しで確認・実行し、Jev の判断には数えないでください",
         elapsedMs: Date.now() - startedAt,
       });
     }
@@ -240,7 +240,7 @@ export async function runTask({
     const stepGoal = planned.jevGoal ?? goal;
 
     let candidates = selectCandidates(parseAX(observation), stepGoal, { max: candidateMax });
-    // 观测不足以支撑决策时（例如上一动作返回的 diff 里没有可解析元素），换成完整树重试一次
+    // 観測が不足する場合（直前の差分に解析できる要素がない場合など）は、完全なツリーで1回再観測する
     if (candidates.length < 2) {
       observation = await driver.observe({ full: true });
       candidates = selectCandidates(parseAX(observation), stepGoal, { max: candidateMax });
@@ -249,13 +249,13 @@ export async function runTask({
         return finish("escalate", {
           steps: step - 1,
           tracePath,
-          message: "候选元素不足，无法决策",
+          message: "候補要素が不足しているため判断できません",
           elapsedMs: Date.now() - startedAt,
         });
       }
     }
     if (candidates.clipped) {
-      emit(`[step ${step}] 候选截断：${candidates.totalClickable} → ${candidateMax}（已按角色/相关度排序）`);
+      emit(`[step ${step}] 候補を制限：${candidates.totalClickable} → ${candidateMax}（ロールと関連度で並べ替え済み）`);
     }
 
     let decision;
@@ -277,10 +277,10 @@ export async function runTask({
     const selected = candidates.find(c => c.index === decision.targetIndex);
     const invalidTarget = decision.targetIndex != null && !selected;
     if (invalidTarget) {
-      return finish("escalate", { steps: step - 1, tracePath, message: "目标不在当前候选集中", elapsedMs: Date.now() - startedAt });
+      return finish("escalate", { steps: step - 1, tracePath, message: "対象が現在の候補一覧にありません", elapsedMs: Date.now() - startedAt });
     }
-    // The model-facing description is lossy. Policy must use the selected
-    // observation's full label, including when a custom adapter supplies a label.
+    // モデル用の説明は短縮される。Policy では、カスタムアダプターがラベルを返した場合も、
+    // 選択された観測要素の完全なラベルを使う。
     if (selected) decision = { ...decision, targetLabel: selected.label };
     const gate = evaluatePolicy({ decision, app: appName, allowedApps, step, maxSteps, thresholds, dryRun });
     const target = decision.targetIndex != null ? `i${decision.targetIndex} (${decision.targetLabel ?? "?"})` : "—";
@@ -292,7 +292,7 @@ export async function runTask({
     record({ event: "step", step, candidates: candidates.length, decision: stripRaw(decision), gate });
 
     if (gate.verdict === "done" && (verify || stepGoal !== goal)) {
-      return finish("escalate", { steps: step - 1, tracePath, decision, message: "Jev 判断完成，但总目标尚未核验；请检查当前阶段", elapsedMs: Date.now() - startedAt });
+      return finish("escalate", { steps: step - 1, tracePath, decision, message: "Jev は完了と判断しましたが全体目標は未確認です。現在の段階を確認してください", elapsedMs: Date.now() - startedAt });
     }
     if (gate.verdict === "done") {
       return finish("done", { steps: step - 1, tracePath, decision, gate, elapsedMs: Date.now() - startedAt });
@@ -311,13 +311,13 @@ export async function runTask({
     }
 
     const tAct = Date.now();
-    // 参数既可以是一份静态配置，也可以是按步生成的回调（Planner 决定"做什么"，Jev 决定"点哪里"）
+    // 引数には固定設定またはステップごとのコールバックを使える（Planner が作業内容、Jev が操作対象を選ぶ）
     const stepResources = typeof resources === "function" ? ((await resources(step, decision)) ?? {}) : resources;
     try {
       await executeAction(driver, decision, stepResources);
     } catch (err) {
       record({ event: "action_error", step, message: err.message });
-      return finish("error", { steps: step, tracePath, message: `动作执行失败：${err.message}`, elapsedMs: Date.now() - startedAt });
+      return finish("error", { steps: step, tracePath, message: `操作の実行に失敗しました：${err.message}`, elapsedMs: Date.now() - startedAt });
     }
     const actMs = Date.now() - tAct;
 
@@ -325,7 +325,7 @@ export async function runTask({
     observation = await driver.observe({ full: true });
     const noChange = observation === previousObservation;
     recentActions.push(`${decision.action} i${decision.targetIndex} → ${noChange ? "no change" : "changed"}`);
-    emit(`         └ 动作 ${actMs}ms · ${noChange ? "界面无变化" : "界面已变化"}`);
+    emit(`         └ 操作 ${actMs}ms · ${noChange ? "画面に変化なし" : "画面に変化あり"}`);
     record({ event: "action", step, actMs, noChange, action: decision.action, targetIndex: decision.targetIndex });
   }
 
@@ -336,7 +336,7 @@ export async function runTask({
 
   function finish(status, extra) {
     record({ event: "finish", status, ...extra });
-    emit(`[jev-use] 结束：${status} · 用时 ${(extra.elapsedMs / 1000).toFixed(1)}s · trace=${tracePath}`);
+    emit(`[jev-use] 終了：${status} · 所要時間 ${(extra.elapsedMs / 1000).toFixed(1)}s · trace=${tracePath}`);
     return { status, ...extra };
   }
 }
@@ -361,7 +361,7 @@ async function executeAction(driver, decision, resources) {
     case "wait":
       return sleep(500);
     default:
-      throw new Error(`不支持的动作类型：${decision.action}`);
+      throw new Error(`未対応の操作種別：${decision.action}`);
   }
 }
 
@@ -370,7 +370,7 @@ const stripRaw = ({ raw, ...rest }) => rest;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 瞬时的基础设施错误（ScreenCaptureKit/无效参数）自动重试 */
+/** 一時的な実行基盤エラー（ScreenCaptureKit／無効な引数）を再試行する */
 export async function withRetry(fn, { attempts = 3, delayMs = 350 } = {}) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
