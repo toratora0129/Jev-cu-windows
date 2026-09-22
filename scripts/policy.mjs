@@ -1,6 +1,6 @@
 /**
- * Policy Gate —— 把 Computer Use 的确认策略编码成代码门槛。
- * 纯函数、无副作用，可脱离 cua 运行时单测。
+ * Policy Gate：Computer Use の確認方針をコードで検査する。
+ * 副作用のない純粋関数。cua 実行環境なしで単体テストできる。
  */
 
 export const DEFAULT_ALLOWED_APPS = [
@@ -13,7 +13,7 @@ export const DEFAULT_ALLOWED_APPS = [
   "Codex In-app Browser",
 ];
 
-/** 目标元素文案命中这些模式时，一律先停下确认（对齐 Computer Use 确认策略） */
+/** 対象の表示文言がこれらのパターンに一致した場合、停止して確認する。照合用の中国語は維持する。 */
 export const SENSITIVE_LABEL_PATTERNS = [
   { id: "delete", re: /删除|移除|清空|delete|remove/i },
   { id: "send", re: /发送|提交|发布|回复|send|submit|post|reply/i },
@@ -25,14 +25,14 @@ export const SENSITIVE_LABEL_PATTERNS = [
 ];
 
 export const DEFAULT_THRESHOLDS = {
-  doneProbability: 0.9, // 完成概率 ≥ 此值 → 结束
-  riskConfirm: 0.2, // 风险概率 ≥ 此值 → 停下确认
-  minConfidence: 0.5, // 目标置信度 < 此值 → 升级（重试/看图/问人）
-  lowRiskMinConfidence: 0.4, // 零副作用 App（计算器/日历/文本编辑）放宽到 0.4
-  stopConfidence: 0.3, // 目标置信度 < 此值 → 直接停
+  doneProbability: 0.9, // 完了の推定値がこの値以上なら終了判定
+  riskConfirm: 0.2, // リスクの推定値がこの値以上なら停止して確認
+  minConfidence: 0.5, // 対象の confidence がこの値未満なら判断を上位へ戻す
+  lowRiskMinConfidence: 0.4, // 上流の低リスク分類では 0.4 に緩和する。副作用がないことを保証する分類ではない
+  stopConfidence: 0.3, // 対象の confidence がこの値未満なら停止
 };
 
-/** 零副作用、可随时重来的 App：置信度门槛可放宽（安全仍由 risk/敏感词把关） */
+/** 上流で confidence の閾値を緩和するアプリ。安全性や書き込み権限を保証する一覧ではない。 */
 export const LOW_RISK_APPS = ["Calculator", "Calendar", "TextEdit", "Figma"];
 
 export function matchSensitive(label = "") {
@@ -42,7 +42,7 @@ export function matchSensitive(label = "") {
 
 /**
  * @param {object} input
- * @param {object} input.decision  normalizeDecision 的输出
+ * @param {object} input.decision  normalizeDecision の出力
  * @param {string} input.app
  * @param {string[]} [input.allowedApps]
  * @param {number} [input.step]
@@ -64,39 +64,39 @@ export function evaluatePolicy({
   const fmt = (n) => (typeof n === "number" ? n.toFixed(2) : "n/a");
 
   if (step > maxSteps) {
-    return { verdict: "stop", kind: "budget", reasons: [`step ${step} 超过上限 ${maxSteps}`] };
+    return { verdict: "stop", kind: "budget", reasons: [`step ${step} が上限を超えました： ${maxSteps}`] };
   }
   if (typeof decision?.done === "number" && decision.done >= t.doneProbability) {
-    return { verdict: "done", reasons: [`完成概率 ${fmt(decision.done)}`] };
+    return { verdict: "done", reasons: [`完了の推定値 ${fmt(decision.done)}`] };
   }
 
   const reasons = [];
-  if (!allowedApps.includes(app)) reasons.push(`App「${app}」不在白名单`);
+  if (!allowedApps.includes(app)) reasons.push(`アプリ「${app}」は許可リストにありません`);
   const sensitive = matchSensitive(decision?.targetLabel);
-  if (sensitive) reasons.push(`目标疑似「${sensitive.id}」类敏感操作：${decision.targetLabel}`);
+  if (sensitive) reasons.push(`対象は「${sensitive.id}」に該当する要確認操作の可能性があります：${decision.targetLabel}`);
   if (typeof decision?.risk === "number" && decision.risk >= t.riskConfirm) {
-    reasons.push(`Jev 风险判定 ${fmt(decision.risk)} ≥ ${t.riskConfirm}`);
+    reasons.push(`Jev のリスク判定 ${fmt(decision.risk)} ≥ ${t.riskConfirm}`);
   }
-  if (decision?.action === "ask_user") reasons.push("Jev 判断需要用户介入");
+  if (decision?.action === "ask_user") reasons.push("Jev がユーザーの対応が必要と判断しました");
   if (reasons.length) return { verdict: "confirm", kind: "sensitive", reasons, dryRun };
 
   if (![decision?.confidence, decision?.risk, decision?.done].every(n => Number.isFinite(n) && n >= 0 && n <= 1)) {
-    return { verdict: "escalate", kind: "invalid_decision", reasons: ["决策概率缺失或超出 0–1"] };
+    return { verdict: "escalate", kind: "invalid_decision", reasons: ["判断の確率値がないか、0～1 の範囲外です"] };
   }
   if (typeof decision?.confidence === "number" && decision.confidence < t.stopConfidence) {
-    return { verdict: "stop", kind: "low_confidence", reasons: [`目标置信度 ${fmt(decision.confidence)} < ${t.stopConfidence}`] };
+    return { verdict: "stop", kind: "low_confidence", reasons: [`対象の confidence ${fmt(decision.confidence)} < ${t.stopConfidence}`] };
   }
   const minConfidence = LOW_RISK_APPS.includes(app) ? t.lowRiskMinConfidence : t.minConfidence;
   if (typeof decision?.confidence === "number" && decision.confidence < minConfidence) {
     return {
       verdict: "escalate",
       kind: "low_confidence",
-      reasons: [`目标置信度 ${fmt(decision.confidence)} < ${minConfidence}`],
+      reasons: [`対象の confidence ${fmt(decision.confidence)} < ${minConfidence}`],
       minConfidence,
     };
   }
   if (decision?.targetIndex == null && decision?.action !== "wait") {
-    return { verdict: "escalate", kind: "no_target", reasons: ["没有选出目标元素"] };
+    return { verdict: "escalate", kind: "no_target", reasons: ["対象要素が選択されていません"] };
   }
 
   return { verdict: "proceed", reasons: [] };

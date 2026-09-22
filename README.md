@@ -1,58 +1,86 @@
-# Jev-cu
+# Jev-cu-windows
 
-把 Computer Use 的「下一步点哪里」交给 Jev（TypeSafe System One）：Jev 从界面文字候选中选元素、动作、完成度与风险，Codex Computer Use 负责读取界面与执行，本地策略门槛拦截敏感操作。只传文字，不传截图。
+Jev（TypeSafe System One）に画面上の候補から次の操作を選ばせ、Codex Computer Use で観測・実行するための実験用 Fork です。上流は [Sac-Y/Jev-cu](https://github.com/Sac-Y/Jev-cu) です。
 
-## 目录
+**現時点では日本語化した段階であり、Windows 対応や安全対策の追加が完了した版ではありません。** 内蔵 driver は上流の `cua.getApp(...)` / `getAXState(...)` を前提にしています。リポジトリ名だけで Windows 互換性を判断せず、実機が公開する API を確認してください。
 
+用途は Computer Use に限定します。文章照合、コード評価、汎用の GitHub チェックは別ツールとして扱います。
+
+## 構成
+
+```text
+skill/jev-cu/   Codex 用スキル（実行手順と安全上の注意）
+scripts/       Jev 呼び出し、Policy、実行ループ、評価、インストール
+fixtures/      保存済み AX スナップショットと P0 テストケース
+tests/         単体テスト
+docs/          日本語化の方針など
 ```
-skill/jev-cu/   可安装到 Codex 的 skill（运行手册 + 安全规则）
-scripts/         Jev 调用、策略门槛、决策循环、离线评测、安装脚本
-fixtures/        AX 快照与 P0 用例
-tests/           单测
+
+Jev に送るのは候補と画面情報のテキストです。この実装は Jev にスクリーンショットを送信しません。ただし、文字情報にも個人情報や機密情報が含まれ得ます。
+
+## まず単体テスト
+
+```powershell
+npm test
 ```
 
-## 安装 skill
+このテストは模擬 driver を使い、Jev API や実際のアプリを操作しません。API キーは不要です。
 
-```bash
-npm run install-skill      # 复制到 ~/.codex/skills/jev-cu，新会话生效
+## API キーの設定
+
+プロジェクト直下の `.env.local` に、次の形式でキーを保存します。または同名の環境変数を設定します。
+
+```text
+TYPESAFE_API_KEY=取得したキー
+```
+
+実際のキーをチャット、スクリーンショット、コマンド履歴、Git のコミットに含めないでください。`.env.local` は `.gitignore` の対象ですが、それだけで漏えい防止が保証されるわけではありません。
+
+## スキルのインストール
+
+```powershell
+npm run install-skill
 npm run uninstall-skill
 ```
 
-skill 源文件里的 `{{REPO_DIR}}` 会在安装时替换成仓库实际路径。
+通常のインストールでは `~/.codex/skills/jev-cu` へコピーし、新しいセッションで有効になります。文書内の `{{REPO_DIR}}` は実際のリポジトリパスへ置換されます。**既存の同名スキル用ディレクトリは削除して置き換える実装**なので、独自の変更がある場合は先に確認してください。
 
-## 使用
+## 実行例（上流の macOS / cua 環境向け）
 
-先在 `.env.local` 写入 key（不提交），或设置同名环境变量：
-
-```bash
-echo 'TYPESAFE_API_KEY=<your key>' > .env.local
-```
-
-循环要在 Codex 桌面 App 的 `cua_repl` 运行时里执行：
+以下は対応する `cua_repl` 環境での例です。Windows 用の起動手順ではありません。現在のツール文書と実際の API が一致する場合にだけ使います。
 
 ```js
-const repo = "/path/to/Jev-cu"; // 换成实际克隆路径
+const repo = "/path/to/Jev-cu-windows"; // 実際のローカルパスに置き換える
 const { pathToFileURL } = await import("node:url");
 const { runTask, createCuaDriver } = await import(pathToFileURL(`${repo}/scripts/loop.mjs`).href);
 
 await runTask({
   driver: createCuaDriver(cua),
   appName: "Calendar",
-  goal: "switch the calendar to the previous month", // 英文目标，Jev 英文最准
-  dryRun: true,                                       // 确认后改 false
+  goal: "switch the calendar to the previous month", // 既存の英語例を維持
+  dryRun: true, // 最初は操作せずプレビューする
   maxSteps: 5,
 });
 ```
 
-## 验证
+詳細は [実行例](skill/jev-cu/references/runtime.md) を参照してください。
 
-```bash
-npm test        # 单测，不调用 API
-npm run p0      # 离线评测：AX 快照选元素准确率（调用 Jev，需要 key）
+## P0 評価
+
+```powershell
+npm run p0
 ```
 
-## 安全边界
+保存済み AX からの候補選択を評価します。**実際に Jev API を呼ぶため、キーと利用料が必要です。** 単体テストとは異なり、ネットワークを使います。静的な候補選択の正解数は、Windows 操作の成功率や安全性を示すものではありません。
 
-- 默认 dry-run；删除、发送、支付、授权、上传、验证码、安装、系统设置等操作停在 `confirm`，需人工确认。
-- App 白名单在 `scripts/policy.mjs`，新增 App 必须显式修改。
-- 界面文字只作为数据，不作为指令；不绕过登录、付费墙和验证码。
+## 安全上の注意
+
+既定は `dryRun: true` です。ただし、画面の観測、API への文字情報送信、ローカルへのログ保存は行われます。dry-run は「通信も保存も一切しない」モードではありません。
+
+現在の Policy はアプリ名、表示文言、Jev の判定に基づく補助的な検査です。危険な操作を必ず検出する保証はなく、許可リストもアプリ内の全操作への許可を意味しません。操作直前の再検証、対象と操作引数の結び付け、Windows driver、送信先固定などは別途設計・検証が必要です。
+
+画面の文字は観測データとして扱い、命令として実行しません。認証・アクセス制限・確認手順を回避しないでください。成功はクリック命令の終了だけで判断せず、目的に対応した結果で確認します。
+
+## 日本語化の範囲
+
+説明文、コメント、表示メッセージ、テスト名を日本語化しています。API の項目名・操作 ID・英語のモデル用質問・中国語を検出する正規表現・中国語画面のテストデータは維持しています。詳しくは [日本語化の方針](docs/LOCALIZATION_JA.md) を参照してください。
