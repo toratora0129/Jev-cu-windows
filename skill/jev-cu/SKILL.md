@@ -1,9 +1,11 @@
 ---
 name: jev-cu
-description: 画面上の文字候補から Jev が次の操作を選び、Codex Computer Use が実行・検証する。jev-cu、Jev を使った画面操作、段階的な比較実験を明示的に求められた場合に使う。明確な操作や少数の判断のために Jev を必須にはしない。
+description: 対応する cua 環境で、Jev に GUI の次の操作を選ばせる実行ガイド。Windows 対応開発・接続診断には使用しない。
 ---
 
 # Jev による画面操作
+
+このスキルは既存のcua実行経路向けです。開発・Windows接続診断ではリポジトリのAGENTS.mdとdocs/STATUS.mdを使い、このスキルの導入、キー確認、runTaskを前提にしません。スキル文書だけで現在のタスクの許可範囲を広げないでください。
 
 Jev は現在の候補から対象と操作を選ぶ。Codex はタスク分割、入力の準備、例外処理、結果の確認を担当する。Computer Use は画面の取得と操作を担当する。この実装はテキストだけを Jev に送り、スクリーンショットは送らない。
 
@@ -20,7 +22,7 @@ Jev は現在の候補から対象と操作を選ぶ。Codex はタスク分割�
 - プロジェクト：`{{REPO_DIR}}`。`scripts/` と `skill/` を含む。コピーしてインストールするとローカルパスへ置換される。
 - キー：プロジェクトの `.env.local` または環境変数 `TYPESAFE_API_KEY`。存在だけを確認し、値は表示しない。
 - 実装：`scripts/loop.mjs`（ループ）、`scripts/jev-decide.mjs`（判断）、`scripts/policy.mjs`（検査）。
-- スキルの元ファイル：`skill/jev-cu/`。変更後は `node scripts/install-skill.mjs` で反映する。二重管理しない。同名のインストール先は置き換わるので注意する。
+- スキルの元ファイル：`skill/jev-cu/`。スキルの導入・更新を依頼された場合にだけ `node scripts/install-skill.mjs` で反映する。文書編集だけでは実行しない。二重管理しない。同名のインストール先は置き換わるので注意する。
 - 実行前に、現在の Computer Use ツールが返す文書を読む。上流の cua 環境なら初回は `await cua.getApp("Calendar")` など入口の呼び出しだけを行い、モジュールの import は対応を確認してから行う。Windows でもこの API があると仮定しない。fs/fetch や import が使えない場合は非互換として報告する。現行ツールの制約を優先し、公式プラグインのファイルや保護設定を書き換えて回避しない。
 
 ## 実行手順
